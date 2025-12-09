@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>无限曼德勃罗 | 时间分形艺术</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #0a0a12;
+            color: #e0e0ff;
+            font-family: 'Courier New', monospace;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #header {
+            background: rgba(10, 10, 25, 0.9);
+            padding: 15px;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .title {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #7aa2f7;
+            text-shadow: 0 0 10px rgba(122, 162, 247, 0.5);
+        }
+        .time-info {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9em;
+        }
+        .time-item {
+            background: rgba(20, 20, 40, 0.8);
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #3a3a6a;
+        }
+        .time-value {
+            color: #f7768e;
+            font-weight: bold;
+        }
+        #controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        label {
+            color: #9ece6a;
+            font-size: 0.9em;
+        }
+        input, select {
+            background: rgba(20, 20, 40, 0.8);
+            border: 1px solid #3a3a6a;
+            color: #e0e0ff;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        button {
+            background: #7aa2f7;
+            color: #1a1a2a;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #9ece6a;
+        }
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(10, 10, 25, 0.9);
+            padding: 30px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #3a3a6a;
+            z-index: 100;
+        }
+        #loading p {
+            margin: 10px 0;
+            color: #7aa2f7;
+        }
+        #fps {
+            position: absolute;
+            bottom: 15px;
+            right: 15px;
+            background: rgba(10, 10, 25, 0.8);
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            border: 1px solid #3a3a6a;
+        }
+        #zoom-level {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(10, 10, 25, 0.8);
+            padding: 8px 15px;
+            border-radius: 6px;
+            font-size: 0.9em;
+            border: 1px solid #3a3a6a;
+        }
+        .error {
+            color: #f7768e;
+            margin-top: 10px;
+        }
+        .success {
+            color: #9ece6a;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div class="title">∞ 曼德勃罗时间分形 ∞</div>
+        <div class="time-info">
+            <div class="time-item">
+                纪元时间: <span id="epochTime" class="time-value">同步中...</span>
+            </div>
+            <div class="time-item">
+                流逝时间: <span id="elapsedTime" class="time-value">0ms</span>
+            </div>
+        </div>
+        <div id="controls">
+            <div class="control-group">
+                <label for="zoomSpeed">放大速度:</label>
+                <input type="range" id="zoomSpeed" min="0.1" max="10" step="0.1" value="1">
+                <span id="zoomSpeedValue">1.0x</span>
+            </div>
+            <div class="control-group">
+                <label for="colorScheme">配色方案:</label>
+                <select id="colorScheme">
+                    <option value="cosmic">宇宙深空</option>
+                    <option value="fire">炽热火焰</option>
+                    <option value="ice">极地寒冰</option>
+                    <option value="rainbow">彩虹光谱</option>
+                </select>
+            </div>
+            <button id="syncTime">重新同步时间</button>
+        </div>
+    </div>
+    
+    <div id="canvas-container">
+        <canvas id="fractalCanvas"></canvas>
+        <div id="loading">
+            <p>🌌 正在初始化无限分形宇宙...</p>
+            <p>正在同步宇宙时间...</p>
+            <p id="syncStatus" class="success">尝试从世界时间API获取...</p>
+        </div>
+        <div id="fps">FPS: <span>--</span></div>
+        <div id="zoom-level">缩放级别: <span>1e0</span></div>
+    </div>
+
+    <script>
+        // ==================== 配置 ====================
+        const CONFIG = {
+            // 纪元起始时间：2025-12-10 07:00:00 UTC+8
+            EPOCH_START: new Date('2025-12-10T07:00:00+08:00').getTime(),
+            
+            // 曼德勃罗参数
+            MANDELBROT: {
+                MAX_ITERATIONS: 500,
+                ESCAPE_RADIUS: 4.0,
+                ZOOM_EXPONENT: 0.00005, // 时间到缩放的指数系数
+                CENTER_X: -0.7436438870371587, // 有趣的曼德勃罗位置
+                CENTER_Y: 0.13182590420531198,
+                INITIAL_ZOOM: 1.0
+            },
+            
+            // 时间同步设置
+            TIME_API_URL: 'https://worldtimeapi.org/api/timezone/Asia/Shanghai',
+            MAX_RETRIES: 5,
+            RETRY_DELAY: 2000
+        };
+
+        // ==================== 全局状态 ====================
+        const state = {
+            // WebGL
+            gl: null,
+            program: null,
+            canvas: null,
+            
+            // 时间系统
+            epochTime: null,      // 纪元时间戳
+            currentTime: null,    // 当前时间戳
+            elapsedTime: 0,       // 从纪元开始流逝的时间(ms)
+            isTimeSynced: false,
+            timeSyncRetries: 0,
+            
+            // 渲染状态
+            isRunning: false,
+            lastFrameTime: 0,
+            frameCount: 0,
+            fps: 0,
+            lastFpsUpdate: 0,
+            
+            // 曼德勃罗参数
+            zoom: CONFIG.MANDELBROT.INITIAL_ZOOM,
+            centerX: CONFIG.MANDELBROT.CENTER_X,
+            centerY: CONFIG.MANDELBROT.CENTER_Y,
+            
+            // 用户控制
+            zoomSpeed: 1.0,
+            colorScheme: 'cosmic'
+        };
+
+        // ==================== WebGL 着色器 ====================
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            varying vec2 v_texCoord;
+            
+            void main() {
+                gl_Position = vec4(a_position, 0.0, 1.0);
+                v_texCoord = a_position * 0.5 + 0.5;
+            }
+        `;
+
+        const fragmentShaderSource = `
+            precision highp float;
+            
+            varying vec2 v_texCoord;
+            
+            // Uniforms
+            uniform float u_time;
+            uniform vec2 u_center;
+            uniform float u_zoom;
+            uniform int u_maxIterations;
+            uniform float u_escapeRadius;
+            uniform int u_colorScheme;
+            
+            // 颜色方案函数
+            vec3 cosmicColor(float t) {
+                float r = 0.5 + 0.5 * cos(6.28318 * (t + 0.0));
+                float g = 0.5 + 0.5 * cos(6.28318 * (t + 0.33));
+                float b = 0.5 + 0.5 * cos(6.28318 * (t + 0.67));
+                return vec3(r, g, b);
+            }
+            
+            vec3 fireColor(float t) {
+                float r = 1.0 - exp(-t * 3.0);
+                float g = 0.8 - exp(-t * 4.0);
+                float b = 0.2 - exp(-t * 5.0);
+                return vec3(r, g, b);
+            }
+            
+            vec3 iceColor(float t) {
+                float r = 0.2 + 0.8 * (1.0 - exp(-t * 2.0));
+                float g = 0.5 + 0.5 * (1.0 - exp(-t * 3.0));
+                float b = 1.0 - exp(-t * 1.0);
+                return vec3(r, g, b);
+            }
+            
+            vec3 rainbowColor(float t) {
+                float hue = t * 6.0;
+                float r = abs(hue - 3.0) - 1.0;
+                float g = 2.0 - abs(hue - 2.0);
+                float b = 2.0 - abs(hue - 4.0);
+                return clamp(vec3(r, g, b), 0.0, 1.0);
+            }
+            
+            void main() {
+                // 将屏幕坐标映射到复平面
+                vec2 c = u_center + (v_texCoord - 0.5) * 4.0 / u_zoom;
+                
+                // 曼德勃罗迭代
+                vec2 z = vec2(0.0, 0.0);
+                int iterations = 0;
+                
+                for (int i = 0; i < 1000; i++) {
+                    if (i >= u_maxIterations) break;
+                    
+                    // z = z^2 + c
+                    float x2 = z.x * z.x;
+                    float y2 = z.y * z.y;
+                    float xy = z.x * z.y;
+                    
+                    z.x = x2 - y2 + c.x;
+                    z.y = 2.0 * xy + c.y;
+                    
+                    // 检查是否逃逸
+                    if (x2 + y2 > u_escapeRadius * u_escapeRadius) {
+                        iterations = i;
+                        break;
+                    }
+                    iterations = i;
+                }
+                
+                // 计算归一化的迭代次数
+                float t = float(iterations) / float(u_maxIterations);
+                
+                // 根据颜色方案选择颜色
+                vec3 color;
+                if (u_colorScheme == 0) {
+                    color = cosmicColor(t);
+                } else if (u_colorScheme == 1) {
+                    color = fireColor(t);
+                } else if (u_colorScheme == 2) {
+                    color = iceColor(t);
+                } else {
+                    color = rainbowColor(t);
+                }
+                
+                // 平滑着色
+                if (iterations < u_maxIterations) {
+                    // 对数平滑
+                    float log_zn = log(z.x * z.x + z.y * z.y) / 2.0;
+                    float nu = log(log_zn / log(2.0)) / log(2.0);
+                    t = (float(iterations) + 1.0 - nu) / float(u_maxIterations);
+                    
+                    // 重新计算平滑后的颜色
+                    if (u_colorScheme == 0) {
+                        color = cosmicColor(t);
+                    } else if (u_colorScheme == 1) {
+                        color = fireColor(t);
+                    } else if (u_colorScheme == 2) {
+                        color = iceColor(t);
+                    } else {
+                        color = rainbowColor(t);
+                    }
+                } else {
+                    // 内部点设为黑色
+                    color = vec3(0.0);
+                }
+                
+                gl_FragColor = vec4(color, 1.0);
+            }
+        `;
+
+        // ==================== 初始化 ====================
+        async function init() {
+            console.log('🌀 初始化无限曼德勃罗系统...');
+            
+            // 获取Canvas和WebGL上下文
+            state.canvas = document.getElementById('fractalCanvas');
+            state.gl = state.canvas.getContext('webgl') || state.canvas.getContext('experimental-webgl');
+            
+            if (!state.gl) {
+                showError('您的浏览器不支持WebGL');
+                return;
+            }
+            
+            // 设置Canvas尺寸
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+            
+            // 编译着色器程序
+            if (!initShaders()) {
+                showError('着色器编译失败');
+                return;
+            }
+            
+            // 初始化几何体
+            initGeometry();
+            
+            // 初始化时间系统
+            await initTimeSystem();
+            
+            // 设置用户控制
+            setupControls();
+            
+            // 开始渲染循环
+            state.isRunning = true;
+            requestAnimationFrame(renderLoop);
+            
+            console.log('✅ 系统初始化完成');
+        }
+
+        // ==================== WebGL 初始化 ====================
+        function initShaders() {
+            try {
+                // 创建着色器程序
+                const vertexShader = createShader(state.gl, state.gl.VERTEX_SHADER, vertexShaderSource);
+                const fragmentShader = createShader(state.gl, state.gl.FRAGMENT_SHADER, fragmentShaderSource);
+                
+                state.program = createProgram(state.gl, vertexShader, fragmentShader);
+                
+                if (!state.program) {
+                    return false;
+                }
+                
+                // 使用程序
+                state.gl.useProgram(state.program);
+                return true;
+            } catch (error) {
+                console.error('着色器错误:', error);
+                return false;
+            }
+        }
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('着色器编译错误:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            
+            return shader;
+        }
+
+        function createProgram(gl, vertexShader, fragmentShader) {
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                console.error('程序链接错误:', gl.getProgramInfoLog(program));
+                return null;
+            }
+            
+            return program;
+        }
+
+        function initGeometry() {
+            // 创建全屏四边形
+            const positions = [
+                -1.0, -1.0,
+                 1.0, -1.0,
+                -1.0,  1.0,
+                 1.0,  1.0
+            ];
+            
+            const positionBuffer = state.gl.createBuffer();
+            state.gl.bindBuffer(state.gl.ARRAY_BUFFER, positionBuffer);
+            state.gl.bufferData(state.gl.ARRAY_BUFFER, new Float32Array(positions), state.gl.STATIC_DRAW);
+            
+            // 设置顶点属性
+            const positionLocation = state.gl.getAttribLocation(state.program, 'a_position');
+            state.gl.enableVertexAttribArray(positionLocation);
+            state.gl.vertexAttribPointer(positionLocation, 2, state.gl.FLOAT, false, 0, 0);
+        }
+
+        // ==================== 时间系统 ====================
+        async function initTimeSystem() {
+            updateStatus('正在获取世界时间...');
+            
+            try {
+                const timeData = await fetchWorldTimeWithRetry();
+                
+                if (timeData) {
+                    // 解析API响应
+                    const currentTime = new Date(timeData.utc_datetime).getTime();
+                    state.currentTime = currentTime;
+                    state.epochTime = CONFIG.EPOCH_START;
+                    state.elapsedTime = currentTime - state.epochTime;
+                    state.isTimeSynced = true;
+                    
+                    updateTimeDisplays();
+                    updateStatus(`✅ 时间同步成功: ${new Date(currentTime).toLocaleString()}`, 'success');
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    console.log('时间同步完成:', {
+                        当前时间: new Date(state.currentTime),
+                        纪元时间: new Date(state.epochTime),
+                        流逝时间: state.elapsedTime + 'ms'
+                    });
+                } else {
+                    throw new Error('无法获取时间数据');
+                }
+            } catch (error) {
+                console.warn('时间同步失败:', error);
+                fallbackToLocalTime();
+            }
+        }
+
+        async function fetchWorldTimeWithRetry() {
+            state.timeSyncRetries = 0;
+            
+            while (state.timeSyncRetries < CONFIG.MAX_RETRIES) {
+                try {
+                    updateStatus(`尝试 ${state.timeSyncRetries + 1}/${CONFIG.MAX_RETRIES}...`);
+                    
+                    const response = await fetch(CONFIG.TIME_API_URL, {
+                        signal: AbortSignal.timeout(5000)
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const data = await response.json();
+                    console.log('时间API响应:', data);
+                    return data;
+                } catch (error) {
+                    state.timeSyncRetries++;
+                    console.warn(`尝试 ${state.timeSyncRetries} 失败:`, error);
+                    
+                    if (state.timeSyncRetries < CONFIG.MAX_RETRIES) {
+                        updateStatus(`等待 ${CONFIG.RETRY_DELAY/1000}秒后重试...`);
+                        await new Promise(resolve => setTimeout(resolve, CONFIG.RETRY_DELAY));
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        function fallbackToLocalTime() {
+            console.log('切换到本地时间模式');
+            state.currentTime = Date.now();
+            state.epochTime = CONFIG.EPOCH_START;
+            state.elapsedTime = state.currentTime - state.epochTime;
+            state.isTimeSynced = false;
+            
+            updateTimeDisplays();
+            updateStatus('⚠️ 使用本地系统时间（可能不完全同步）', 'error');
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function updateTimeDisplays() {
+            // 纪元时间显示
+            const epochElement = document.getElementById('epochTime');
+            if (epochElement) {
+                const date = new Date(state.epochTime);
+                epochElement.textContent = date.toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                });
+            }
+            
+            // 流逝时间显示
+            const elapsedElement = document.getElementById('elapsedTime');
+            if (elapsedElement) {
+                const seconds = Math.floor(state.elapsedTime / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+                
+                if (days > 0) {
+                    elapsedElement.textContent = `${days}d ${hours % 24}h ${minutes % 60}m`;
+                } else if (hours > 0) {
+                    elapsedElement.textContent = `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+                } else if (minutes > 0) {
+                    elapsedElement.textContent = `${minutes}m ${seconds % 60}s`;
+                } else {
+                    elapsedElement.textContent = `${seconds}s`;
+                }
+            }
+        }
+
+        function updateStatus(message, type = 'normal') {
+            const statusElement = document.getElementById('syncStatus');
+            if (statusElement) {
+                statusElement.textContent = message;
+                statusElement.className = type === 'success' ? 'success' : 
+                                        type === 'error' ? 'error' : 'normal';
+            }
+        }
+
+        // ==================== 渲染系统 ====================
+        function resizeCanvas() {
+            const displayWidth = state.canvas.clientWidth;
+            const displayHeight = state.canvas.clientHeight;
+            
+            if (state.canvas.width !== displayWidth || state.canvas.height !== displayHeight) {
+                state.canvas.width = displayWidth;
+                state.canvas.height = displayHeight;
+                state.gl.viewport(0, 0, displayWidth, displayHeight);
+            }
+        }
+
+        function updateZoomFromTime() {
+            if (!state.isTimeSynced) {
+                // 使用本地时间
+                state.elapsedTime = Date.now() - state.epochTime;
+            } else {
+                // 更新流逝时间
+                state.elapsedTime += 16; // 假设每帧16ms，实际应该用精确时间差
+            }
+            
+            // 基于时间计算缩放级别
+            // 使用指数增长来模拟无限放大
+            const timeInSeconds = state.elapsedTime / 1000;
+            const zoomFactor = Math.exp(timeInSeconds * CONFIG.MANDELBROT.ZOOM_EXPONENT * state.zoomSpeed);
+            state.zoom = CONFIG.MANDELBROT.INITIAL_ZOOM * zoomFactor;
+            
+            // 更新缩放显示
+            const zoomElement = document.querySelector('#zoom-level span');
+            if (zoomElement) {
+                zoomElement.textContent = `1e${Math.log10(state.zoom).toFixed(2)}`;
+            }
+        }
+
+        function renderLoop(timestamp) {
+            if (!state.isRunning) return;
+            
+            // 计算FPS
+            calculateFPS(timestamp);
+            
+            // 更新基于时间的缩放
+            updateZoomFromTime();
+            
+            // 更新Uniforms
+            updateUniforms();
+            
+            // 清除画布
+            state.gl.clearColor(0.0, 0.0, 0.0, 1.0);
+            state.gl.clear(state.gl.COLOR_BUFFER_BIT);
+            
+            // 绘制
+            state.gl.drawArrays(state.gl.TRIANGLE_STRIP, 0, 4);
+            
+            // 请求下一帧
+            requestAnimationFrame(renderLoop);
+        }
+
+        function updateUniforms() {
+            const gl = state.gl;
+            const program = state.program;
+            
+            // 时间Uniform
+            const timeLoc = gl.getUniformLocation(program, 'u_time');
+            gl.uniform1f(timeLoc, state.elapsedTime / 1000.0);
+            
+            // 中心点Uniform
+            const centerLoc = gl.getUniformLocation(program, 'u_center');
+            gl.uniform2f(centerLoc, state.centerX, state.centerY);
+            
+            // 缩放Uniform
+            const zoomLoc = gl.getUniformLocation(program, 'u_zoom');
+            gl.uniform1f(zoomLoc, state.zoom);
+            
+            // 最大迭代次数
+            const maxIterLoc = gl.getUniformLocation(program, 'u_maxIterations');
+            gl.uniform1i(maxIterLoc, CONFIG.MANDELBROT.MAX_ITERATIONS);
+            
+            // 逃逸半径
+            const escapeLoc = gl.getUniformLocation(program, 'u_escapeRadius');
+            gl.uniform1f(escapeLoc, CONFIG.MANDELBROT.ESCAPE_RADIUS);
+            
+            // 颜色方案
+            const colorSchemeMap = {
+                'cosmic': 0,
+                'fire': 1,
+                'ice': 2,
+                'rainbow': 3
+            };
+            const colorLoc = gl.getUniformLocation(program, 'u_colorScheme');
+            gl.uniform1i(colorLoc, colorSchemeMap[state.colorScheme] || 0);
+        }
+
+        function calculateFPS(timestamp) {
+            state.frameCount++;
+            
+            if (timestamp - state.lastFpsUpdate >= 1000) {
+                state.fps = Math.round((state.frameCount * 1000) / (timestamp - state.lastFpsUpdate));
+                state.frameCount = 0;
+                state.lastFpsUpdate = timestamp;
+                
+                const fpsElement = document.querySelector('#fps span');
+                if (fpsElement) {
+                    fpsElement.textContent = state.fps;
+                }
+            }
+        }
+
+        // ==================== 用户控制 ====================
+        function setupControls() {
+            // 放大速度控制
+            const zoomSpeedInput = document.getElementById('zoomSpeed');
+            const zoomSpeedValue = document.getElementById('zoomSpeedValue');
+            
+            zoomSpeedInput.addEventListener('input', function() {
+                state.zoomSpeed = parseFloat(this.value);
+                zoomSpeedValue.textContent = this.value + 'x';
+            });
+            
+            // 颜色方案控制
+            const colorSchemeSelect = document.getElementById('colorScheme');
+            colorSchemeSelect.addEventListener('change', function() {
+                state.colorScheme = this.value;
+            });
+            
+            // 重新同步时间按钮
+            const syncButton = document.getElementById('syncTime');
+            syncButton.addEventListener('click', async function() {
+                document.getElementById('loading').style.display = 'block';
+                updateStatus('正在重新同步时间...');
+                await initTimeSystem();
+            });
+            
+            // 添加键盘控制
+            document.addEventListener('keydown', handleKeyDown);
+        }
+
+        function handleKeyDown(event) {
+            const moveStep = 0.1 / state.zoom;
+            
+            switch(event.key) {
+                case 'ArrowUp':
+                    state.centerY -= moveStep;
+                    break;
+                case 'ArrowDown':
+                    state.centerY += moveStep;
+                    break;
+                case 'ArrowLeft':
+                    state.centerX -= moveStep;
+                    break;
+                case 'ArrowRight':
+                    state.centerX += moveStep;
+                    break;
+                case '+':
+                case '=':
+                    state.zoom *= 1.1;
+                    break;
+                case '-':
+                case '_':
+                    state.zoom /= 1.1;
+                    break;
+                case 'r':
+                case 'R':
+                    // 重置到初始位置
+                    state.zoom = CONFIG.MANDELBROT.INITIAL_ZOOM;
+                    state.centerX = CONFIG.MANDELBROT.CENTER_X;
+                    state.centerY = CONFIG.MANDELBROT.CENTER_Y;
+                    break;
+            }
+        }
+
+        // ==================== 工具函数 ====================
+        function showError(message) {
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.innerHTML = `<p class="error">❌ ${message}</p>`;
+            }
+            console.error(message);
+        }
+
+        // ==================== 启动 ====================
+        window.addEventListener('load', init);
+        
+        // 全局访问
+        window.FractalUniverse = {
+            state,
+            CONFIG,
+            updateZoom: function(factor) {
+                state.zoom *= factor;
+            },
+            moveCenter: function(dx, dy) {
+                state.centerX += dx / state.zoom;
+                state.centerY += dy / state.zoom;
+            },
+            setCenter: function(x, y) {
+                state.centerX = x;
+                state.centerY = y;
+            }
+        };
+    </script>
+</body>
+</html>
